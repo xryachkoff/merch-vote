@@ -172,7 +172,7 @@
   }
 
   async function loadVariants() {
-    return fetch('variants.json').then(r => r.json());
+    return fetch('variants.json?v=202609301621').then(r => r.json());
   }
 
   function esc(s) {
