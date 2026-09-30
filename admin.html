@@ -14,8 +14,7 @@
 <header class="top">
   <div class="wrap">
     <div class="brand">Мерч · <span>админка</span></div>
-    <div class="user" id="user"></div>
-    <div id="signin"></div>
+    <div class="user" id="user" hidden><a href="#" id="logout">выйти</a></div>
   </div>
 </header>
 
@@ -25,6 +24,14 @@
     <p><a href="index.html">← к голосованию</a></p>
     <div class="banner" id="banner" hidden></div>
   </section>
+
+  <form class="panel login" id="login" hidden>
+    <h2>Вход в админку</h2>
+    <div class="toolbar">
+      <input type="password" id="pw" placeholder="Пароль" autocomplete="current-password" required>
+      <button class="btn" type="submit">Войти</button>
+    </div>
+  </form>
 
   <div id="content" hidden>
     <div class="stats" id="stats"></div>
@@ -61,7 +68,10 @@
 <script src="app.js"></script>
 <script>
 const $ = id => document.getElementById(id);
-let variants = [], data = null;
+let variants = [], data = null, password = null;
+const PW_KEY = 'mv_admin_pw';
+function pwGet() { try { return sessionStorage.getItem(PW_KEY); } catch (e) { return null; } }
+function pwSet(v) { try { v ? sessionStorage.setItem(PW_KEY, v) : sessionStorage.removeItem(PW_KEY); } catch (e) {} }
 
 function toast(msg) {
   const t = $('toast');
@@ -127,13 +137,19 @@ function render() {
 
 async function load() {
   try {
-    data = await MV.api('admin_results');
-    banner('');
+    data = await MV.adminApi('admin_results', {}, password);
+    pwSet(password);
+    banner(MV.DEMO ? 'Демо-режим: показываются голоса только из этого браузера, подходит любой пароль.' : '');
+    $('login').hidden = true;
+    $('user').hidden = false;
     $('content').hidden = false;
     render();
   } catch (e) {
     $('content').hidden = true;
-    banner(e.message === 'forbidden' ? 'Этот аккаунт не в списке админов.' : MV.errorText(e));
+    $('user').hidden = true;
+    $('login').hidden = false;
+    pwSet(null);
+    banner(MV.errorText(e));
   }
 }
 
@@ -154,7 +170,7 @@ $('toggle').onclick = async () => {
   const open = !data.open;
   if (!open && !confirm('Закрыть голосование? Голоса и комментарии больше нельзя будет менять.')) return;
   try {
-    await MV.api('admin_set_open', { open });
+    await MV.adminApi('admin_set_open', { open }, password);
     toast(open ? 'Голосование открыто' : 'Голосование закрыто');
     load();
   } catch (e) { toast(MV.errorText(e)); }
@@ -164,13 +180,14 @@ $('csv').onclick = csv;
 
 (async function init() {
   variants = await MV.loadVariants();
-  if (MV.DEMO) banner('Демо-режим: показываются голоса только из этого браузера.');
-  MV.initAuth($('signin'), u => {
-    $('signin').hidden = true;
-    $('user').innerHTML = `<span>${MV.esc(u.name)}</span> · <a href="#" id="logout">выйти</a>`;
-    $('logout').onclick = e => { e.preventDefault(); MV.logout(); };
+  $('logout').onclick = e => { e.preventDefault(); pwSet(null); location.reload(); };
+  $('login').onsubmit = e => {
+    e.preventDefault();
+    password = $('pw').value;
     load();
-  });
+  };
+  password = pwGet();
+  if (password) load(); else $('login').hidden = false;
 })();
 </script>
 </body>

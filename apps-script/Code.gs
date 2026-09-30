@@ -5,8 +5,9 @@
 
 // OAuth Client ID (Google Cloud Console → Credentials → OAuth client ID → Web application)
 const CLIENT_ID = 'PASTE_CLIENT_ID.apps.googleusercontent.com';
-// Кто видит админку. Хранится только здесь, в публичный репозиторий не попадает.
-const ADMIN_EMAILS = ['PASTE_ADMIN_EMAIL@gmail.com'];
+// Пароль админки. Вписывается только здесь, в редакторе Apps Script; в публичный репозиторий не попадает.
+const ADMIN_PASSWORD = 'PASTE_ADMIN_PASSWORD';
+const MAX_ADMIN_FAILS = 10; // неудачных попыток за 10 минут, дальше админка временно блокируется
 
 const MAX_VOTES = 2;
 const VARIANT_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
@@ -23,15 +24,25 @@ function doPost(e) {
   } catch (err) {
     return json_({ error: 'bad_request' });
   }
+  const action = String(body.action || '');
+
+  if (action.startsWith('admin_')) {
+    const admin = { admin_results: adminResults, admin_set_open: adminSetOpen }[action];
+    if (!admin) return json_({ error: 'unknown_action' });
+    const check = checkAdminPassword_(body.password);
+    if (check) return json_({ error: check, status: 403 });
+    try {
+      return json_(admin(null, body));
+    } catch (err) {
+      return json_({ error: String(err.message || err) });
+    }
+  }
+
   const user = verify_(body.token);
   if (!user) return json_({ error: 'unauthorized', status: 401 });
 
-  const handlers = { me, vote, comment, admin_results: adminResults, admin_set_open: adminSetOpen };
-  const handler = handlers[body.action];
+  const handler = { me, vote, comment }[action];
   if (!handler) return json_({ error: 'unknown_action' });
-  if (body.action.startsWith('admin_') && !isAdmin_(user.email)) {
-    return json_({ error: 'forbidden', status: 403 });
-  }
   try {
     return json_(handler(user, body));
   } catch (err) {
@@ -45,7 +56,7 @@ function me(user) {
   const votes = rows_('votes').filter(r => r[0] === user.email).map(r => Number(r[2]));
   const comments = {};
   rows_('comments').filter(r => r[0] === user.email).forEach(r => { comments[r[2]] = r[3]; });
-  return { open: isOpen_(), email: user.email, name: user.name, votes, comments, max: MAX_VOTES, admin: isAdmin_(user.email) };
+  return { open: isOpen_(), email: user.email, name: user.name, votes, comments, max: MAX_VOTES };
 }
 
 function vote(user, body) {
@@ -111,8 +122,14 @@ function verify_(token) {
   return user;
 }
 
-function isAdmin_(email) {
-  return ADMIN_EMAILS.map(e => e.toLowerCase()).includes(email);
+// Возвращает код ошибки или '' если пароль верный. Считает неудачные попытки, чтобы пароль нельзя было перебрать.
+function checkAdminPassword_(password) {
+  const cache = CacheService.getScriptCache();
+  const fails = Number(cache.get('admin_fails') || 0);
+  if (fails >= MAX_ADMIN_FAILS) return 'locked';
+  if (ADMIN_PASSWORD !== 'PASTE_ADMIN_PASSWORD' && String(password || '') === ADMIN_PASSWORD) return '';
+  cache.put('admin_fails', String(fails + 1), 600);
+  return 'forbidden';
 }
 
 function isOpen_() {

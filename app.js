@@ -101,11 +101,23 @@
     return res;
   }
 
+  // Админские вызовы: без Google-входа, по паролю, который проверяет сервер.
+  async function adminApi(action, data, password) {
+    const res = DEMO ? (password ? demoApi(action, data || {}) : { error: 'forbidden' }) : await fetch(C.APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(Object.assign({ action, password }, data)),
+    }).then(r => r.json());
+    if (res.error) throw new Error(res.error);
+    return res;
+  }
+
   const ERRORS = {
     closed: 'Голосование закрыто',
     too_many: 'Можно выбрать максимум ' + C.MAX_VOTES,
     unauthorized: 'Сессия истекла — войдите заново',
-    forbidden: 'Нет доступа',
+    forbidden: 'Неверный пароль',
+    locked: 'Слишком много неудачных попыток — подождите 10 минут',
   };
   function errorText(e) {
     const m = e && e.message;
@@ -128,7 +140,7 @@
       case 'me': {
         const comments = {};
         db.comments.filter(c => c.email === u.email).forEach(c => { comments[c.variant] = c.text; });
-        return { open: !db.closed, email: u.email, name: u.name, votes: db.votes.filter(v => v.email === u.email).map(v => v.variant), comments, max: C.MAX_VOTES, admin: true };
+        return { open: !db.closed, email: u.email, name: u.name, votes: db.votes.filter(v => v.email === u.email).map(v => v.variant), comments, max: C.MAX_VOTES };
       }
       case 'vote': {
         if (db.closed) return { error: 'closed' };
@@ -167,5 +179,5 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
-  window.MV = { DEMO, initAuth, logout, api, errorText, loadVariants, esc, user: tokenUser };
+  window.MV = { DEMO, initAuth, logout, api, adminApi, errorText, loadVariants, esc, user: tokenUser };
 })();

@@ -161,7 +161,6 @@ async function refresh() {
     banner(me.open ? '' : 'Голосование закрыто. Спасибо всем, кто проголосовал!', !me.open);
     const u = MV.user();
     $('user').innerHTML = `${u && u.picture ? `<img src="${MV.esc(u.picture)}" alt="">` : ''}<span>${MV.esc(me.name)}</span>`
-      + (me.admin ? ` · <a href="admin.html">админка</a>` : '')
       + ` · <a href="#" id="logout">выйти</a>`;
     $('logout').onclick = e => { e.preventDefault(); MV.logout(); };
     $('signin').hidden = true;
