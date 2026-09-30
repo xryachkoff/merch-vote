@@ -44,6 +44,11 @@
     </section>
 
     <section class="panel">
+      <h2>Кто за что голосовал</h2>
+      <div class="tbl-wrap"><table class="tbl" id="voters"></table></div>
+    </section>
+
+    <section class="panel">
       <h2>Комментарии</h2>
       <div id="comments"></div>
     </section>
@@ -96,6 +101,21 @@ function render() {
       </div>
     </div>`;
   }).join('');
+
+  const people = {};
+  data.votes.forEach(x => {
+    const p = people[x.email] || (people[x.email] = { name: x.name, email: x.email, ids: [], at: x.at });
+    p.ids.push(x.variant);
+    if (x.at > p.at) p.at = x.at;
+  });
+  const plist = Object.values(people).sort((a, b) => String(a.name).localeCompare(String(b.name), 'ru'));
+  $('voters').innerHTML = plist.length
+    ? `<thead><tr><th>Кто</th><th>Голоса</th><th>Когда</th></tr></thead><tbody>` + plist.map(p => `<tr>
+        <td><b>${MV.esc(p.name)}</b><div class="who">${MV.esc(p.email)}</div></td>
+        <td>${p.ids.sort((a, b) => a - b).map(id => `<span class="chip"><img src="${byId[id].image}" alt="">№${id} ${MV.esc(byId[id].title)}</span>`).join('')}</td>
+        <td class="who">${fmt(p.at)}</td>
+      </tr>`).join('') + '</tbody>'
+    : '<tbody><tr><td class="who">Пока никто не голосовал.</td></tr></tbody>';
 
   const groups = variants.map(v => ({ v, list: data.comments.filter(c => c.variant === v.id) })).filter(g => g.list.length);
   $('comments').innerHTML = groups.length ? groups.map(({ v, list }) => `

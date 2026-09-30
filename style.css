@@ -130,3 +130,10 @@ footer { color: var(--muted); font-size: 13px; padding: 24px 0 40px; border-top:
   .grid { grid-template-columns: 1fr; }
   .counter { top: 64px; }
 }
+.tbl-wrap { overflow-x: auto; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tbl th { text-align: left; color: var(--muted); font-weight: 600; font-size: 13px; padding: 0 12px 8px 0; }
+.tbl td { border-top: 1px solid var(--line); padding: 10px 12px 10px 0; vertical-align: top; }
+.tbl td .who { margin-top: 2px; }
+.chip { display: inline-flex; align-items: center; gap: 8px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 99px; padding: 3px 10px 3px 3px; margin: 0 6px 6px 0; }
+.chip img { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; background: #111; }
