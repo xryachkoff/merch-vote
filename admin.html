@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Мерч: результаты</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brand">Мерч · <span>админка</span></div>
+    <div class="user" id="user"></div>
+    <div id="signin"></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <h1>Результаты голосования</h1>
+    <p><a href="index.html">← к голосованию</a></p>
+    <div class="banner" id="banner" hidden></div>
+  </section>
+
+  <div id="content" hidden>
+    <div class="stats" id="stats"></div>
+
+    <section class="panel">
+      <div class="toolbar">
+        <span class="switch">Статус: <span class="pill" id="status"></span></span>
+        <button class="btn btn-sm" id="toggle"></button>
+        <button class="btn btn-sm btn-ghost" id="reload">Обновить</button>
+        <button class="btn btn-sm btn-ghost" id="csv">Скачать CSV</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Рейтинг</h2>
+      <div id="rank"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Комментарии</h2>
+      <div id="comments"></div>
+    </section>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+let variants = [], data = null;
+
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => t.classList.remove('show'), 2400);
+}
+function banner(text) { $('banner').hidden = !text; $('banner').textContent = text || ''; $('banner').classList.add('warn'); }
+function fmt(d) { return d ? new Date(d).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''; }
+
+function render() {
+  const byId = Object.fromEntries(variants.map(v => [v.id, v]));
+  const max = Math.max(1, ...Object.values(data.tally));
+  const total = data.votes.length;
+
+  $('stats').innerHTML = [
+    [data.voters, 'проголосовали'],
+    [total, 'голосов всего'],
+    [data.comments.length, 'комментариев'],
+  ].map(([n, l]) => `<div class="stat"><b>${n}</b><span>${l}</span></div>`).join('');
+
+  $('status').className = 'pill ' + (data.open ? 'open' : 'closed');
+  $('status').textContent = data.open ? 'открыто' : 'закрыто';
+  $('toggle').textContent = data.open ? 'Закрыть голосование' : 'Открыть снова';
+
+  const ranked = variants.map(v => ({ v, n: data.tally[v.id] || 0 })).sort((a, b) => b.n - a.n || a.v.id - b.v.id);
+  $('rank').innerHTML = ranked.map(({ v, n }, i) => {
+    const who = data.votes.filter(x => x.variant === v.id).map(x => MV.esc(x.name)).join(', ');
+    const pct = total ? Math.round(n / data.voters * 100) : 0;
+    return `<div class="rank">
+      <img src="${v.image}" alt="">
+      <div>
+        <div class="t"><span>${i + 1}. №${v.id} ${MV.esc(v.title)}</span><span>${n} <small>${data.voters ? '· ' + pct + '% голосовавших' : ''}</small></span></div>
+        <div class="bar"><i style="width:${n / max * 100}%"></i></div>
+        ${who ? `<div class="who">${who}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  const groups = variants.map(v => ({ v, list: data.comments.filter(c => c.variant === v.id) })).filter(g => g.list.length);
+  $('comments').innerHTML = groups.length ? groups.map(({ v, list }) => `
+    <div class="cgroup">
+      <h3>№${v.id} ${MV.esc(v.title)} · ${list.length}</h3>
+      ${list.map(c => `<div class="comment"><div class="meta">${MV.esc(c.name)} · ${fmt(c.at)}</div><p>${MV.esc(c.text)}</p></div>`).join('')}
+    </div>`).join('') : '<p class="who">Комментариев пока нет.</p>';
+}
+
+async function load() {
+  try {
+    data = await MV.api('admin_results');
+    banner('');
+    $('content').hidden = false;
+    render();
+  } catch (e) {
+    $('content').hidden = true;
+    banner(e.message === 'forbidden' ? 'Этот аккаунт не в списке админов.' : MV.errorText(e));
+  }
+}
+
+function csv() {
+  const byId = Object.fromEntries(variants.map(v => [v.id, v.title]));
+  const q = s => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
+  const rows = [['type', 'name', 'email', 'variant_id', 'variant', 'text', 'at']];
+  data.votes.forEach(v => rows.push(['vote', v.name, v.email, v.variant, byId[v.variant], '', v.at]));
+  data.comments.forEach(c => rows.push(['comment', c.name, c.email, c.variant, byId[c.variant], c.text, c.at]));
+  const blob = new Blob(['﻿' + rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'merch-vote.csv';
+  a.click();
+}
+
+$('toggle').onclick = async () => {
+  const open = !data.open;
+  if (!open && !confirm('Закрыть голосование? Голоса и комментарии больше нельзя будет менять.')) return;
+  try {
+    await MV.api('admin_set_open', { open });
+    toast(open ? 'Голосование открыто' : 'Голосование закрыто');
+    load();
+  } catch (e) { toast(MV.errorText(e)); }
+};
+$('reload').onclick = load;
+$('csv').onclick = csv;
+
+(async function init() {
+  variants = await MV.loadVariants();
+  if (MV.DEMO) banner('Демо-режим: показываются голоса только из этого браузера.');
+  MV.initAuth($('signin'), u => {
+    $('signin').hidden = true;
+    $('user').innerHTML = `<span>${MV.esc(u.name)}</span> · <a href="#" id="logout">выйти</a>`;
+    $('logout').onclick = e => { e.preventDefault(); MV.logout(); };
+    load();
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Голосуем за мерч</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>😈</text></svg>">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brand">Бести<span>и</span> · мерч</div>
+    <div class="user" id="user"></div>
+    <div id="signin"></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <h1>Выбираем дизайн командного мерча</h1>
+    <p>Отдайте голос максимум за <b>два</b> варианта. Голос можно поменять, пока голосование открыто. Комментарий можно оставить к любому варианту, даже если вы за него не голосуете.</p>
+    <div class="banner" id="banner" hidden></div>
+  </section>
+
+  <div class="counter" id="counter" hidden>
+    <span class="dots" id="dots"></span>
+    <span id="counterText"></span>
+  </div>
+
+  <section class="grid" id="grid"></section>
+</main>
+
+<footer class="wrap">Картинки собраны из таблицы «Идеи для командного мерча». Голоса и комментарии сохраняются в той же таблице.</footer>
+
+<dialog class="lb" id="lb">
+  <button class="close" aria-label="Закрыть" onclick="this.closest('dialog').close()">×</button>
+  <img id="lbImg" alt="">
+</dialog>
+<div class="toast" id="toast"></div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script>
+const MAX = CONFIG.MAX_VOTES;
+const $ = id => document.getElementById(id);
+const state = { variants: [], me: null, votes: [], comments: {}, busy: false };
+
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+function banner(text, warn) {
+  const b = $('banner');
+  b.hidden = !text;
+  b.textContent = text || '';
+  b.classList.toggle('warn', !!warn);
+}
+
+function canAct() { return state.me && state.me.open && !state.busy; }
+
+function render() {
+  const { variants, votes, comments, me } = state;
+  // не терять несохранённый текст комментариев при перерисовке
+  const drafts = {};
+  document.querySelectorAll('[data-cm]').forEach(t => {
+    drafts[t.dataset.cm] = { text: t.value, open: t.closest('details').open };
+  });
+  $('grid').innerHTML = variants.map(v => {
+    const on = votes.includes(v.id);
+    const full = !on && votes.length >= MAX;
+    let label = on ? '✓ Мой голос' : 'Голосую';
+    let title = '';
+    if (!me) title = 'Войдите, чтобы голосовать';
+    else if (full) title = 'Уже выбрано ' + MAX + ' — сначала снимите один голос';
+    const saved = comments[v.id] || '';
+    const d = drafts[v.id];
+    const cm = d ? d.text : saved;
+    const open = d ? d.open : !!saved;
+    return `
+    <article class="card${on ? ' voted' : ''}" id="v${v.id}">
+      <button class="pic" data-zoom="${v.image}" aria-label="Увеличить: ${MV.esc(v.title)}">
+        <img src="${v.image}" alt="${MV.esc(v.title)}" loading="lazy" width="${v.w}" height="${v.h}">
+        <span class="num">№${v.id}</span>
+      </button>
+      <div class="body">
+        <div>
+          <h3>${MV.esc(v.title)}</h3>
+          ${v.author ? `<div class="by">Автор идеи: ${MV.esc(v.author)}</div>` : ''}
+        </div>
+        ${v.description ? `<p class="desc">${MV.esc(v.description)}</p>` : ''}
+        <div class="actions">
+          <button class="btn btn-vote${on ? ' on' : ''}" data-vote="${v.id}" title="${title}" ${!canAct() || full ? 'disabled' : ''}>${label}</button>
+          <details class="cm"${open ? ' open' : ''}>
+            <summary>${saved ? 'Мой комментарий' : 'Оставить комментарий'}</summary>
+            <textarea data-cm="${v.id}" maxlength="1000" placeholder="${me ? 'Что нравится, что докрутить…' : 'Войдите, чтобы комментировать'}" ${canAct() ? '' : 'disabled'}>${MV.esc(cm)}</textarea>
+            <div class="cm-row">
+              <button class="btn btn-sm" data-save="${v.id}" ${canAct() ? '' : 'disabled'}>Сохранить</button>
+              <span class="cm-status" id="cms${v.id}"></span>
+            </div>
+          </details>
+        </div>
+      </div>
+    </article>`;
+  }).join('');
+
+  $('counter').hidden = !me;
+  $('dots').innerHTML = Array.from({ length: MAX }, (_, i) => `<i class="${i < votes.length ? 'on' : ''}"></i>`).join('');
+  $('counterText').textContent = `Выбрано ${votes.length} из ${MAX}`;
+}
+
+async function toggleVote(id) {
+  const prev = state.votes.slice();
+  const next = prev.includes(id) ? prev.filter(x => x !== id) : prev.concat(id);
+  if (next.length > MAX) return toast('Можно выбрать максимум ' + MAX);
+  state.votes = next;
+  state.busy = true;
+  render();
+  try {
+    const r = await MV.api('vote', { ids: next });
+    state.votes = r.votes;
+    toast(next.length > prev.length ? 'Голос сохранён' : 'Голос снят');
+  } catch (e) {
+    state.votes = prev;
+    toast(MV.errorText(e));
+    if (e.message === 'closed') refresh();
+  } finally {
+    state.busy = false;
+    render();
+  }
+}
+
+async function saveComment(id) {
+  const ta = document.querySelector(`[data-cm="${id}"]`);
+  const st = $('cms' + id);
+  const text = ta.value.trim();
+  st.className = 'cm-status';
+  st.textContent = 'Сохраняю…';
+  try {
+    await MV.api('comment', { variant: id, text });
+    if (text) state.comments[id] = text; else delete state.comments[id];
+    st.className = 'cm-status ok';
+    st.textContent = text ? 'Сохранено' : 'Удалено';
+  } catch (e) {
+    st.textContent = MV.errorText(e);
+  }
+}
+
+async function refresh() {
+  try {
+    const me = await MV.api('me');
+    state.me = me;
+    state.votes = me.votes;
+    state.comments = me.comments;
+    banner(me.open ? '' : 'Голосование закрыто. Спасибо всем, кто проголосовал!', !me.open);
+    const u = MV.user();
+    $('user').innerHTML = `${u && u.picture ? `<img src="${MV.esc(u.picture)}" alt="">` : ''}<span>${MV.esc(me.name)}</span>`
+      + (me.admin ? ` · <a href="admin.html">админка</a>` : '')
+      + ` · <a href="#" id="logout">выйти</a>`;
+    $('logout').onclick = e => { e.preventDefault(); MV.logout(); };
+    $('signin').hidden = true;
+  } catch (e) {
+    banner(MV.errorText(e), true);
+    if (e.message === 'unauthorized') { state.me = null; $('signin').hidden = false; }
+  }
+  render();
+}
+
+$('grid').addEventListener('click', e => {
+  const z = e.target.closest('[data-zoom]');
+  if (z) { $('lbImg').src = z.dataset.zoom; $('lb').showModal(); return; }
+  const v = e.target.closest('[data-vote]');
+  if (v && !v.disabled) return toggleVote(Number(v.dataset.vote));
+  const s = e.target.closest('[data-save]');
+  if (s && !s.disabled) return saveComment(Number(s.dataset.save));
+});
+$('lb').addEventListener('click', e => { if (e.target === $('lb')) $('lb').close(); });
+
+(async function init() {
+  state.variants = await MV.loadVariants();
+  if (MV.DEMO) banner('Демо-режим: бэкенд ещё не подключён, голоса хранятся только в этом браузере.');
+  render();
+  MV.initAuth($('signin'), () => refresh());
+})();
+</script>
+</body>
+</html>
