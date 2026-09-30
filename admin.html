@@ -7,7 +7,7 @@
 <title>Мерч: результаты</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;600;700;800&display=swap">
-<link rel="stylesheet" href="style.css?v=202609301621">
+<link rel="stylesheet" href="style.css?v=2">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
 </head>
 <body>
@@ -64,8 +64,8 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="config.js?v=202609301621"></script>
-<script src="app.js?v=202609301621"></script>
+<script src="config.js?v=2"></script>
+<script src="app.js?v=2"></script>
 <script>
 const $ = id => document.getElementById(id);
 let variants = [], data = null, password = null;
@@ -73,14 +73,8 @@ const PW_KEY = 'mv_admin_pw';
 function pwGet() { try { return sessionStorage.getItem(PW_KEY); } catch (e) { return null; } }
 function pwSet(v) { try { v ? sessionStorage.setItem(PW_KEY, v) : sessionStorage.removeItem(PW_KEY); } catch (e) {} }
 
-function toast(msg) {
-  const t = $('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  clearTimeout(toast.t);
-  toast.t = setTimeout(() => t.classList.remove('show'), 2400);
-}
 function banner(text) { $('banner').hidden = !text; $('banner').textContent = text || ''; $('banner').classList.add('warn'); }
+function normName(n) { return String(n || '').toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim(); }
 function fmt(d) { return d ? new Date(d).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''; }
 
 function render() {
@@ -112,16 +106,19 @@ function render() {
     </div>`;
   }).join('');
 
+  // один человек = один браузер (voter_id); одинаковые имена с разных устройств подсвечиваем
   const people = {};
   data.votes.forEach(x => {
-    const p = people[x.email] || (people[x.email] = { name: x.name, email: x.email, ids: [], at: x.at });
+    const p = people[x.voter] || (people[x.voter] = { name: x.name, voter: x.voter, ids: [], at: x.at });
     p.ids.push(x.variant);
     if (x.at > p.at) p.at = x.at;
   });
-  const plist = Object.values(people).sort((a, b) => String(a.name).localeCompare(String(b.name), 'ru'));
+  const plist = Object.values(people).sort((a, b) => String(a.name).localeCompare(String(b.name), 'ru') || String(a.at).localeCompare(String(b.at)));
+  const nameCount = {};
+  plist.forEach(p => { const k = normName(p.name); nameCount[k] = (nameCount[k] || 0) + 1; });
   $('voters').innerHTML = plist.length
     ? `<thead><tr><th>Кто</th><th>Голоса</th><th>Когда</th></tr></thead><tbody>` + plist.map(p => `<tr>
-        <td><b>${MV.esc(p.name)}</b><div class="who">${MV.esc(p.email)}</div></td>
+        <td><b>${MV.esc(p.name)}</b>${nameCount[normName(p.name)] > 1 ? ' <span class="pill closed" title="Это имя голосовало с нескольких устройств или браузеров">дубль?</span>' : ''}<div class="who">устройство ${MV.esc(String(p.voter).slice(0, 8))}</div></td>
         <td>${p.ids.sort((a, b) => a - b).map(id => `<span class="chip"><img src="${byId[id].image}" alt="">№${id} ${MV.esc(byId[id].title)}</span>`).join('')}</td>
         <td class="who">${fmt(p.at)}</td>
       </tr>`).join('') + '</tbody>'
@@ -139,7 +136,7 @@ async function load() {
   try {
     data = await MV.adminApi('admin_results', {}, password);
     pwSet(password);
-    banner(MV.DEMO ? 'Демо-режим: показываются голоса только из этого браузера, подходит любой пароль.' : '');
+    banner('');
     $('login').hidden = true;
     $('user').hidden = false;
     $('content').hidden = false;
@@ -156,9 +153,9 @@ async function load() {
 function csv() {
   const byId = Object.fromEntries(variants.map(v => [v.id, v.title]));
   const q = s => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
-  const rows = [['type', 'name', 'email', 'variant_id', 'variant', 'text', 'at']];
-  data.votes.forEach(v => rows.push(['vote', v.name, v.email, v.variant, byId[v.variant], '', v.at]));
-  data.comments.forEach(c => rows.push(['comment', c.name, c.email, c.variant, byId[c.variant], c.text, c.at]));
+  const rows = [['type', 'name', 'voter_id', 'variant_id', 'variant', 'text', 'at']];
+  data.votes.forEach(v => rows.push(['vote', v.name, v.voter, v.variant, byId[v.variant], '', v.at]));
+  data.comments.forEach(c => rows.push(['comment', c.name, c.voter, c.variant, byId[c.variant], c.text, c.at]));
   const blob = new Blob(['﻿' + rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -171,9 +168,9 @@ $('toggle').onclick = async () => {
   if (!open && !confirm('Закрыть голосование? Голоса и комментарии больше нельзя будет менять.')) return;
   try {
     await MV.adminApi('admin_set_open', { open }, password);
-    toast(open ? 'Голосование открыто' : 'Голосование закрыто');
+    MV.toast(open ? 'Голосование открыто' : 'Голосование закрыто');
     load();
-  } catch (e) { toast(MV.errorText(e)); }
+  } catch (e) { MV.toast(MV.errorText(e)); }
 };
 $('reload').onclick = load;
 $('csv').onclick = csv;

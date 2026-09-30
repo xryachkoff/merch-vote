@@ -1,7 +1,7 @@
-// Заполняется после развёртывания Apps Script (см. README.md).
-// Пока APPS_SCRIPT_URL пустой, страница работает в демо-режиме: голоса хранятся только в этом браузере.
 window.CONFIG = {
+  // URL веб-приложения Apps Script (Deploy → Web app), см. README.md
   APPS_SCRIPT_URL: '',
-  GOOGLE_CLIENT_ID: '',
   MAX_VOTES: 2,
+  // меняется при каждом релизе, чтобы браузеры не брали старые файлы из кэша
+  VERSION: '2',
 };

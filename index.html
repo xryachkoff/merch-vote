@@ -4,17 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Голосуем за мерч</title>
+<meta name="description" content="Выбираем дизайн командного мерча Бестий">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;600;700;800&display=swap">
-<link rel="stylesheet" href="style.css?v=202609301621">
+<link rel="stylesheet" href="style.css?v=2">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>😈</text></svg>">
 </head>
 <body>
 <header class="top">
   <div class="wrap">
     <div class="brand">Бести<span>и</span> · мерч</div>
-    <div class="user" id="user"></div>
-    <div id="signin"></div>
+    <div class="user" id="user" hidden></div>
   </div>
 </header>
 
@@ -22,6 +22,16 @@
   <section class="hero">
     <h1>Выбираем дизайн командного мерча</h1>
     <p>Отдайте голос максимум за <b>два</b> варианта. Голос можно поменять, пока голосование открыто. Комментарий можно оставить к любому варианту, даже если вы за него не голосуете.</p>
+
+    <form class="panel login" id="nameForm" hidden>
+      <h2>Как вас зовут?</h2>
+      <p class="who">Имя увидит только организатор, чтобы понимать, кто за что голосовал.</p>
+      <div class="toolbar">
+        <input id="nameInput" maxlength="60" placeholder="Имя" autocomplete="name" required>
+        <button class="btn btn-primary" type="submit">Продолжить</button>
+      </div>
+    </form>
+
     <div class="banner" id="banner" hidden></div>
   </section>
 
@@ -33,7 +43,7 @@
   <section class="grid" id="grid"></section>
 </main>
 
-<footer class="wrap">Картинки собраны из таблицы «Идеи для командного мерча». Голоса и комментарии сохраняются в той же таблице.</footer>
+<footer class="wrap">Варианты собраны из таблицы «Идеи для командного мерча».</footer>
 
 <dialog class="lb" id="lb">
   <button class="close" aria-label="Закрыть" onclick="this.closest('dialog').close()">×</button>
@@ -41,20 +51,14 @@
 </dialog>
 <div class="toast" id="toast"></div>
 
-<script src="config.js?v=202609301621"></script>
-<script src="app.js?v=202609301621"></script>
+<script src="config.js?v=2"></script>
+<script src="app.js?v=2"></script>
 <script>
 const MAX = CONFIG.MAX_VOTES;
 const $ = id => document.getElementById(id);
-const state = { variants: [], me: null, votes: [], comments: {}, busy: false };
-
-function toast(msg) {
-  const t = $('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  clearTimeout(toast.t);
-  toast.t = setTimeout(() => t.classList.remove('show'), 2400);
-}
+const ID = MV.identity;
+// ready — ответ сервера получен; open — голосование открыто
+const state = { variants: [], ready: false, open: false, votes: [], comments: {}, busy: false };
 
 function banner(text, warn) {
   const b = $('banner');
@@ -63,22 +67,40 @@ function banner(text, warn) {
   b.classList.toggle('warn', !!warn);
 }
 
-function canAct() { return state.me && state.me.open && !state.busy; }
+// комментарии не блокируются, пока сохраняется голос; кнопки голосования — блокируются
+function canComment() { return state.ready && state.open && !!ID.name; }
+function canAct() { return canComment() && !state.busy; }
 
-function render() {
-  const { variants, votes, comments, me } = state;
+function renderUser() {
+  const has = !!ID.name;
+  $('nameForm').hidden = has || (state.ready && !state.open);
+  $('user').hidden = !has;
+  if (has) {
+    $('user').innerHTML = `<span>Вы: <b>${MV.esc(ID.name)}</b></span> · <a href="#" id="rename">изменить</a>`;
+    $('rename').onclick = e => {
+      e.preventDefault();
+      $('nameInput').value = ID.name;
+      $('nameForm').hidden = false;
+      $('nameInput').focus();
+    };
+  }
+}
+
+// keepDrafts=false — после загрузки с сервера: показываем сохранённое, а не то, что было в полях
+function render(keepDrafts = true) {
+  const { variants, votes, comments } = state;
   // не терять несохранённый текст комментариев при перерисовке
   const drafts = {};
-  document.querySelectorAll('[data-cm]').forEach(t => {
-    drafts[t.dataset.cm] = { text: t.value, open: t.closest('details').open };
+  if (keepDrafts) document.querySelectorAll('[data-cm]').forEach(t => {
+    const st = document.getElementById('cms' + t.dataset.cm);
+    drafts[t.dataset.cm] = { text: t.value, open: t.closest('details').open, status: st.textContent, ok: st.classList.contains('ok') };
   });
+  const act = canAct();
+  const cmOk = canComment();
   $('grid').innerHTML = variants.map(v => {
     const on = votes.includes(v.id);
     const full = !on && votes.length >= MAX;
-    let label = on ? '✓ Мой голос' : 'Голосую';
-    let title = '';
-    if (!me) title = 'Войдите, чтобы голосовать';
-    else if (full) title = 'Уже выбрано ' + MAX + ' — сначала снимите один голос';
+    const title = !ID.name ? 'Сначала представьтесь' : full ? 'Уже выбрано ' + MAX + ' — сначала снимите один голос' : '';
     const saved = comments[v.id] || '';
     const d = drafts[v.id];
     const cm = d ? d.text : saved;
@@ -96,13 +118,13 @@ function render() {
         </div>
         ${v.description ? `<p class="desc">${MV.esc(v.description)}</p>` : ''}
         <div class="actions">
-          <button class="btn btn-vote${on ? ' on' : ''}" data-vote="${v.id}" title="${title}" ${!canAct() || full ? 'disabled' : ''}>${label}</button>
+          <button class="btn btn-vote${on ? ' on' : ''}" data-vote="${v.id}" title="${title}" ${!act || full ? 'disabled' : ''}>${on ? '✓ Мой голос' : 'Голосую'}</button>
           <details class="cm"${open ? ' open' : ''}>
             <summary>${saved ? 'Мой комментарий' : 'Оставить комментарий'}</summary>
-            <textarea data-cm="${v.id}" maxlength="1000" placeholder="${me ? 'Что нравится, что докрутить…' : 'Войдите, чтобы комментировать'}" ${canAct() ? '' : 'disabled'}>${MV.esc(cm)}</textarea>
+            <textarea data-cm="${v.id}" maxlength="1000" placeholder="Что нравится, что докрутить…" ${cmOk ? '' : 'disabled'}>${MV.esc(cm)}</textarea>
             <div class="cm-row">
-              <button class="btn btn-sm" data-save="${v.id}" ${canAct() ? '' : 'disabled'}>Сохранить</button>
-              <span class="cm-status" id="cms${v.id}"></span>
+              <button class="btn btn-sm" data-save="${v.id}" ${cmOk ? '' : 'disabled'}>Сохранить</button>
+              <span class="cm-status${d && d.ok ? ' ok' : ''}" id="cms${v.id}">${d ? MV.esc(d.status) : ''}</span>
             </div>
           </details>
         </div>
@@ -110,7 +132,7 @@ function render() {
     </article>`;
   }).join('');
 
-  $('counter').hidden = !me;
+  $('counter').hidden = !(state.ready && ID.name);
   $('dots').innerHTML = Array.from({ length: MAX }, (_, i) => `<i class="${i < votes.length ? 'on' : ''}"></i>`).join('');
   $('counterText').textContent = `Выбрано ${votes.length} из ${MAX}`;
 }
@@ -118,18 +140,18 @@ function render() {
 async function toggleVote(id) {
   const prev = state.votes.slice();
   const next = prev.includes(id) ? prev.filter(x => x !== id) : prev.concat(id);
-  if (next.length > MAX) return toast('Можно выбрать максимум ' + MAX);
+  if (next.length > MAX) return MV.toast('Можно выбрать максимум ' + MAX);
   state.votes = next;
   state.busy = true;
   render();
   try {
     const r = await MV.api('vote', { ids: next });
     state.votes = r.votes;
-    toast(next.length > prev.length ? 'Голос сохранён' : 'Голос снят');
+    MV.toast(next.length > prev.length ? 'Голос сохранён' : 'Голос снят');
   } catch (e) {
     state.votes = prev;
-    toast(MV.errorText(e));
-    if (e.message === 'closed') refresh();
+    MV.toast(MV.errorText(e));
+    if (e.message === 'closed') load();
   } finally {
     state.busy = false;
     render();
@@ -137,39 +159,52 @@ async function toggleVote(id) {
 }
 
 async function saveComment(id) {
-  const ta = document.querySelector(`[data-cm="${id}"]`);
-  const st = $('cms' + id);
-  const text = ta.value.trim();
-  st.className = 'cm-status';
-  st.textContent = 'Сохраняю…';
+  // карточка может перерисоваться, пока идёт запрос, поэтому элемент статуса ищем каждый раз заново
+  const status = (t, ok) => {
+    const el = $('cms' + id);
+    if (el) { el.className = 'cm-status' + (ok ? ' ok' : ''); el.textContent = t; }
+  };
+  const text = document.querySelector(`[data-cm="${id}"]`).value.trim();
+  status('Сохраняю…');
   try {
     await MV.api('comment', { variant: id, text });
     if (text) state.comments[id] = text; else delete state.comments[id];
-    st.className = 'cm-status ok';
-    st.textContent = text ? 'Сохранено' : 'Удалено';
+    status(text ? 'Сохранено' : 'Удалено', true);
   } catch (e) {
-    st.textContent = MV.errorText(e);
+    status(MV.errorText(e));
+    if (e.message === 'closed') load();
   }
 }
 
-async function refresh() {
+async function load() {
   try {
     const me = await MV.api('me');
-    state.me = me;
+    state.ready = true;
+    state.open = me.open;
     state.votes = me.votes;
     state.comments = me.comments;
     banner(me.open ? '' : 'Голосование закрыто. Спасибо всем, кто проголосовал!', !me.open);
-    const u = MV.user();
-    $('user').innerHTML = `${u && u.picture ? `<img src="${MV.esc(u.picture)}" alt="">` : ''}<span>${MV.esc(me.name)}</span>`
-      + ` · <a href="#" id="logout">выйти</a>`;
-    $('logout').onclick = e => { e.preventDefault(); MV.logout(); };
-    $('signin').hidden = true;
+    renderUser();
   } catch (e) {
+    state.ready = false;
     banner(MV.errorText(e), true);
-    if (e.message === 'unauthorized') { state.me = null; $('signin').hidden = false; }
   }
-  render();
+  render(false);
 }
+
+$('nameForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const name = $('nameInput').value.replace(/\s+/g, ' ').trim();
+  if (!name) return;
+  const changed = ID.name && ID.name !== name;
+  ID.name = name;
+  renderUser();
+  render();
+  // обновить имя у уже отданных голосов
+  if (changed && state.votes.length && state.open) {
+    try { await MV.api('vote', { ids: state.votes }); } catch (err) { /* имя обновится при следующем голосе */ }
+  }
+});
 
 $('grid').addEventListener('click', e => {
   const z = e.target.closest('[data-zoom]');
@@ -182,10 +217,10 @@ $('grid').addEventListener('click', e => {
 $('lb').addEventListener('click', e => { if (e.target === $('lb')) $('lb').close(); });
 
 (async function init() {
+  renderUser();
   state.variants = await MV.loadVariants();
-  if (MV.DEMO) banner('Демо-режим: бэкенд ещё не подключён, голоса хранятся только в этом браузере.');
   render();
-  MV.initAuth($('signin'), () => refresh());
+  load();
 })();
 </script>
 </body>
