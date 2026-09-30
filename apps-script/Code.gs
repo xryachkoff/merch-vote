@@ -108,7 +108,9 @@ function checkAdminPassword_(password) {
   const cache = CacheService.getScriptCache();
   const fails = Number(cache.get('admin_fails') || 0);
   if (fails >= MAX_ADMIN_FAILS) return 'locked';
-  if (ADMIN_PASSWORD !== 'PASTE_ADMIN_PASSWORD' && String(password || '') === ADMIN_PASSWORD) return '';
+  // пока пароль не вписан (заглушка PASTE_…), админка закрыта для всех
+  const configured = !/^PASTE_/.test(ADMIN_PASSWORD);
+  if (configured && String(password || '') === ADMIN_PASSWORD) return '';
   cache.put('admin_fails', String(fails + 1), 600);
   return 'forbidden';
 }
